@@ -3,6 +3,10 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+#Flash images - will be added only in releases
+binaries/flash_images/*
+!binaries/flash_images/.gitkeep
+
 # C extensions
 *.so
 
