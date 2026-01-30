@@ -66,7 +66,7 @@ emulated SPI NOR flash. It exposes a UART for console I/O and an MTD-backed
 SPI flash device that can be populated with user binaries.  
 
 
-###Supported devices
+### Supported devices
 
 The ``neorv32`` machine provides the core peripherals needed by the  
 bootloader and examples:  
@@ -81,7 +81,7 @@ bootloader and examples:
 the specific patch series you are using.)  
   
   
-###QEMU build configuration:
+### QEMU build configuration:
 
 From the command line::
 ```bash
@@ -93,13 +93,13 @@ From the command line::
   --disable-vnc \
   --disable-gtk
 ```
-###Boot options
+### Boot options
 
 Typical usage is to boot the NEORV32 bootloader as the QEMU ``-bios`` image,  
 and to provide a raw SPI flash image via an MTD drive. The bootloader will  
 then jump to the application image placed at the configured flash offset.  
 
-####Preparing the SPI flash with a “Hello World” example
+#### Preparing the SPI flash with a “Hello World” example
 
 1. Create a 64 MiB flash image (filled with zeros)::  
 ```bash
@@ -113,7 +113,7 @@ then jump to the application image placed at the configured flash offset.
    $ dd if=/path/to/neorv32_exe.bin of=$HOME/flash_contents.bin bs=1 seek=$((0x00400000)) conv=notrunc
 ```
 
-####Running the “Hello World” example
+#### Running the “Hello World” example
 
 Run QEMU with the NEORV32 bootloader as ``-bios`` and attach the prepared  
 flash image via the MTD interface. Replace the placeholder paths with your  
@@ -132,7 +132,7 @@ Notes:
   located at the 4 MiB offset of the flash image.  
 * If you prefer, you can use ``-serial stdio`` instead of ``-nographic``.  
 
-####Machine-specific options
+#### Machine-specific options
 
 Unless otherwise noted by the patch series, there are no special board  
 options beyond the standard QEMU options shown above. Commonly useful  
@@ -150,13 +150,13 @@ Example: debugging with GDB::
       -s -S
 ```
 
-  # In another shell:
+  * In another shell:
 ```bash
   $ riscv32-unknown-elf-gdb /path/to/neorv32/bootloader/main.elf
   (gdb) target remote :1234
 ```
 
-####Known limitations
+#### Known limitations
 
 
 This is a functional model intended for software bring-up and testing of  
