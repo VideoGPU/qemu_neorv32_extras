@@ -48,12 +48,32 @@ Set the path to qemu-system-riscv32
 ```bash
 export QEMU_RISCV32_BIN=$HOME/qemu/build/qemu-system-riscv32
 ```
+
+Build the `demo_twd` payload (required by the I2C slave unit test):
+```bash
+cd $HOME/neorv32/sw/example/demo_twd
+make clean all RISCV_PREFIX=riscv32-unknown-elf-
+```
+
+Optionally force a custom payload path:
+```bash
+export NEORV32_DEMO_TWD_BIN=$HOME/neorv32/sw/example/demo_twd/neorv32_exe.bin
+```
+
 Run unit tests
 ```bash
 cd $HOME/qemu_neorv32_extras
 python3 tests/unit/test_run_bootloader.py
 python3 tests/unit/test_run_with_flash.py
+python3 tests/unit/test_twi_i2c_slave.py
 ```
+
+`test_twi_i2c_slave.py` uses:
+
+* `scripts/bash/generate_flash_image.sh`
+* `scripts/bash/run_with_flash.sh`
+* payload `sw/example/demo_twd/neorv32_exe.bin`
+* flash output in `binaries/flash_images/flash_demo_twd_64mb.bin`
 
 That's all - you have successfully run the Neorv32 specific code on QEMU emulator.
 
