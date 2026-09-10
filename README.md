@@ -52,12 +52,30 @@ export QEMU_RISCV32_BIN=$HOME/qemu/build/qemu-system-riscv32
 Build the `demo_twd` payload (required by the I2C slave unit test):
 ```bash
 cd $HOME/neorv32/sw/example/demo_twd
-make clean all RISCV_PREFIX=riscv32-unknown-elf-
+PATH=/opt/riscv32-unknown-elf.gcc-12.1.0/bin:$PATH \
+  RISCV_PREFIX=riscv32-unknown-elf- \
+  make clean_all all
 ```
 
 Optionally force a custom payload path:
 ```bash
 export NEORV32_DEMO_TWD_BIN=$HOME/neorv32/sw/example/demo_twd/neorv32_exe.bin
+```
+
+When validating against a rebased or locally modified NEORV32 tree, rebuild the
+bootloader from that same tree and pass it to the TWD test. This avoids using
+the bundled bootloader image from this repository.
+
+```bash
+cd $HOME/neorv32/sw/bootloader
+PATH=/opt/riscv32-unknown-elf.gcc-12.1.0/bin:$PATH \
+  RISCV_PREFIX=riscv32-unknown-elf- \
+  make clean_all all \
+  MARCH=rv32imc_zicsr_zifencei \
+  MABI=ilp32 \
+  USER_FLAGS="-Wl,--defsym,__neorv32_ram_size=256 -Wl,--defsym,__neorv32_ram_base=0x80000000 -Wl,--defsym,__neorv32_rom_size=16k -Wl,--defsym,__neorv32_rom_base=0xFFE00000 -DMAKE_BOOTLOADER -flto"
+
+export NEORV32_BOOTLOADER_BIN=$HOME/neorv32/sw/bootloader/neorv32_raw_exe.bin
 ```
 
 Run unit tests
@@ -73,7 +91,12 @@ python3 tests/unit/test_twi_i2c_slave.py
 * `scripts/bash/generate_flash_image.sh`
 * `scripts/bash/run_with_flash.sh`
 * payload `sw/example/demo_twd/neorv32_exe.bin`
+* optional bootloader override `NEORV32_BOOTLOADER_BIN`
 * flash output in `binaries/flash_images/flash_demo_twd_64mb.bin`
+
+Validated on 2026-09-10 against QEMU `6c5974a5db` and NEORV32
+`ae4dc23de`: the test found I2C address `0x32`, wrote `11 22 33`, read the
+same byte sequence back, and passed.
 
 That's all - you have successfully run the Neorv32 specific code on QEMU emulator.
 

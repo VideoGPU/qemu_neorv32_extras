@@ -11,7 +11,11 @@ Flow (based on docs/system/riscv/neorv32.rst):
 This test is intended to be runnable in CI, e.g.:
 
 	QEMU_RISCV32_BIN=/path/to/qemu-system-riscv32 \
+	NEORV32_BOOTLOADER_BIN=/path/to/neorv32_raw_exe.bin \
 	python3 -m tests.unit.test_twi_i2c_slave
+
+NEORV32_BOOTLOADER_BIN is optional. Use it when validating against a rebased
+or locally rebuilt NEORV32 tree instead of this repository's bundled bootloader.
 """
 
 from __future__ import annotations
@@ -98,6 +102,19 @@ def get_demo_twd_payload(repo_root: Path) -> Path:
 	return payload_path
 
 
+def get_bootloader_bin(repo_root: Path) -> Path | None:
+	"""Resolve optional bootloader override from env var."""
+	env_name = "NEORV32_BOOTLOADER_BIN"
+	bootloader = os.environ.get(env_name)
+	if not bootloader:
+		return None
+
+	bootloader_path = Path(bootloader).expanduser().resolve()
+	if not bootloader_path.is_file():
+		raise RuntimeError(f"{env_name} set but file not found: {bootloader_path}")
+	return bootloader_path
+
+
 def generate_flash_image(repo_root: Path, payload: Path) -> Path:
 	"""Generate test flash image using scripts/bash/generate_flash_image.sh."""
 	script = repo_root / "scripts" / "bash" / "generate_flash_image.sh"
@@ -167,15 +184,15 @@ def wait_for_uart_markers(
 	collected: list[str],
 ) -> None:
 	"""Wait until boot markers appear on UART output."""
-	markers = [
-		"NEORV32 Bootloader",
-		"Booting from 0x00000000",
+	marker_groups = [
+		["NEORV32 Bootloader"],
+		["Booting from 0x00000000", "Booting (@0x00000000)"],
 	]
-	seen = {marker: False for marker in markers}
+	seen = [False for _ in marker_groups]
 
 	while True:
 		if time.time() - overall_start > OVERALL_TIMEOUT_SEC:
-			missing = [m for m, ok in seen.items() if not ok]
+			missing = [" or ".join(markers) for markers, ok in zip(marker_groups, seen) if not ok]
 			raise RuntimeError(
 				"Timeout waiting for UART markers. Missing: "
 				f"{', '.join(missing)}"
@@ -193,11 +210,11 @@ def wait_for_uart_markers(
 			collected.append(line)
 			sys.stdout.write(line)
 			sys.stdout.flush()
-			for marker in markers:
-				if marker in line:
-					seen[marker] = True
+			for idx, markers in enumerate(marker_groups):
+				if any(marker in line for marker in markers):
+					seen[idx] = True
 
-		if all(seen.values()):
+		if all(seen):
 			return
 
 
@@ -325,6 +342,7 @@ def run_twi_i2c_slave_test() -> None:
 	repo_root = find_repo_root()
 	qemu_bin = get_qemu_bin()
 	payload = get_demo_twd_payload(repo_root)
+	bootloader = get_bootloader_bin(repo_root)
 	flash_img = generate_flash_image(repo_root, payload)
 
 	run_script = repo_root / "scripts" / "bash" / "run_with_flash.sh"
@@ -348,10 +366,14 @@ def run_twi_i2c_slave_test() -> None:
 			"-device",
 			"i2c-master-chardev,chardev=twdm,bus=i2c",
 		]
+		if bootloader:
+			cmd[5:5] = ["-b", str(bootloader)]
 
 		print(f"[INFO] Repo root: {repo_root}")
 		print(f"[INFO] QEMU bin:  {qemu_bin}")
 		print(f"[INFO] Payload:   {payload}")
+		if bootloader:
+			print(f"[INFO] Bootloader: {bootloader}")
 		print(f"[INFO] Flash:     {flash_img}")
 		print(f"[INFO] Script:    {run_script}")
 		print(f"[INFO] Socket:    {socket_path}")
