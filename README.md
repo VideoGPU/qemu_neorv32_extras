@@ -84,6 +84,7 @@ cd $HOME/qemu_neorv32_extras
 python3 tests/unit/test_run_bootloader.py
 python3 tests/unit/test_run_with_flash.py
 python3 tests/unit/test_twi_i2c_slave.py
+python3 tests/unit/test_mipi_tx.py
 ```
 
 `test_twi_i2c_slave.py` uses:
@@ -93,6 +94,18 @@ python3 tests/unit/test_twi_i2c_slave.py
 * payload `sw/example/demo_twd/neorv32_exe.bin`
 * optional bootloader override `NEORV32_BOOTLOADER_BIN`
 * flash output in `binaries/flash_images/flash_demo_twd_64mb.bin`
+
+`test_mipi_tx.py` uses:
+
+* `scripts/bash/generate_flash_image.sh`
+* payload `binaries/examples/demo_mipi_tx/neorv32_exe.bin`, overridable with
+  `NEORV32_DEMO_MIPI_TX_BIN`
+* optional bootloader override `NEORV32_BOOTLOADER_BIN`
+* flash output in `binaries/flash_images/flash_demo_mipi_tx_64mb.bin`
+
+It boots `demo_mipi_tx`, checks that the IP is detected and that all four
+frames complete, and then validates the captured CSI-2 stream (framing,
+header ECC and payload CRC).
 
 Validated on 2026-09-10 against QEMU `6c5974a5db` and NEORV32
 `ae4dc23de`: the test found I2C address `0x32`, wrote `11 22 33`, read the
@@ -118,6 +131,8 @@ bootloader and examples:
   ``-serial stdio`` is used).  
 * SPI controller connected to an emulated SPI NOR flash (exposed to the  
   guest via QEMU's ``if=mtd`` backend).  
+* TWD (two-wire device) I2C slave on an internal I2C bus.  
+* MIPI CSI-2 TX AXI4-Lite IP on the external bus (XBUS), at ``0x44A00000``.  
 * Basic timer/CLINT-like facilities required by the example software.  
   
 (Exact register maps and optional peripherals depend on the QEMU version and  
@@ -174,6 +189,44 @@ Notes:
 * The bootloader starts first and will transfer control to your application  
   located at the 4 MiB offset of the flash image.  
 * If you prefer, you can use ``-serial stdio`` instead of ``-nographic``.  
+
+#### Running the MIPI CSI-2 TX demo
+
+The ``neorv32`` machine instantiates the MIPI CSI-2 TX AXI4-Lite IP
+(``mipi_tx_axi_ip``) on the external bus at ``0x44A00000``. Build
+``sw/example/demo_mipi_tx`` from the NEORV32 tree, or use the prebuilt
+``binaries/examples/demo_mipi_tx/neorv32_exe.bin`` bundled here.
+
+```bash
+./scripts/bash/generate_flash_image.sh \
+    -p binaries/examples/demo_mipi_tx/neorv32_exe.bin \
+    -o binaries/flash_images/flash_demo_mipi_tx_64mb.bin
+
+./scripts/bash/run_with_flash.sh \
+    -q $HOME/qemu/build/qemu-system-riscv32 \
+    -f binaries/flash_images/flash_demo_mipi_tx_64mb.bin
+```
+
+The demo transmits four 640x480 RAW10 frames over two lanes and prints one
+line per frame. The device can also capture the generated CSI-2 packet stream
+to a file. The type name contains a dot, so the long ``-global`` syntax has to
+be used:
+
+```bash
+./scripts/bash/run_with_flash.sh \
+    -q $HOME/qemu/build/qemu-system-riscv32 \
+    -f binaries/flash_images/flash_demo_mipi_tx_64mb.bin \
+    -- -global driver=neorv32.mipi-tx,property=dumpfile,value=/tmp/mipi_tx.bin
+```
+
+The resulting file holds back-to-back CSI-2 packets (Frame Start short packet,
+one long packet per line with header ECC and payload CRC, Frame End short
+packet) and can be fed to the `mipi_decoder` tooling:
+
+```bash
+mipi-decoder decode /tmp/mipi_tx.bin --frame-summary
+mipi-decoder decode /tmp/mipi_tx.bin --export-raw10-png-dir /tmp/frames
+```
 
 #### Machine-specific options
 
