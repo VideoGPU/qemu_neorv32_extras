@@ -19,6 +19,13 @@ import time
 import subprocess
 from pathlib import Path
 
+try:
+    from tests.unit.qemu_output import (
+        POPEN_GROUP_KWARGS, QemuOutputReader, stop_process_group)
+except ImportError:  # run as a script: python3 tests/unit/<test>.py
+    from qemu_output import (
+        POPEN_GROUP_KWARGS, QemuOutputReader, stop_process_group)
+
 # Boots Hello World too; includes the bootloader auto-boot countdown
 # (8-10 s, runs because the machine reports a CLINT in SYSINFO).
 OVERALL_TIMEOUT_SEC = 90.0
@@ -92,7 +99,9 @@ def run_with_flash_test() -> None:
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        **POPEN_GROUP_KWARGS,
     )
+    reader = QemuOutputReader(proc)
 
     bootloader_seen = False
     hello_seen = False
@@ -105,28 +114,26 @@ def run_with_flash_test() -> None:
                     f"[ERROR] Timeout: QEMU did not complete within "
                     f"{OVERALL_TIMEOUT_SEC} seconds"
                 )
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
+                stop_process_group(proc)
                 raise RuntimeError(
-                    "Timeout waiting for QEMU / bootloader + Hello World output"
+                    "Timeout waiting for QEMU / bootloader + Hello World output; "
+                    f"last partial line: {reader.partial_line()!r}"
                 )
 
-            line = proc.stdout.readline()
-            if line == "":
-                # EOF
-                break
-
-            # Echo QEMU output to our stdout (useful for CI logs)
-            sys.stdout.write(line)
+            lines = reader.read_lines(0.5)
+            if not lines:
+                if reader.eof:
+                    break
+                continue
+            for line in lines:
+                # Echo QEMU output to our stdout (useful for CI logs)
+                sys.stdout.write(line)
             sys.stdout.flush()
 
-            if "NEORV32 Bootloader" in line:
+            if any("NEORV32 Bootloader" in line for line in lines):
                 bootloader_seen = True
 
-            if "Hello world!" in line or "Hello world! :)" in line:
+            if any("Hello world!" in line for line in lines) and not hello_seen:
                 hello_seen = True
                 print("[INFO] Detected Hello World payload, sending Ctrl-a x...")
                 sys.stdout.flush()
@@ -142,8 +149,8 @@ def run_with_flash_test() -> None:
             rc = proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             print("[ERROR] QEMU did not exit after Ctrl-a x; killing it.")
-            proc.kill()
-            rc = proc.wait(timeout=5)
+            stop_process_group(proc)
+            rc = proc.returncode
 
         if not bootloader_seen:
             raise RuntimeError(
@@ -162,16 +169,8 @@ def run_with_flash_test() -> None:
         print("[INFO] run_with_flash.sh test PASSED.")
 
     finally:
-        # Safety: ensure process is not left running
-        if proc.poll() is None:
-            try:
-                proc.terminate()
-                proc.wait(timeout=5)
-            except Exception:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
+        # Safety: ensure neither the wrapper nor QEMU is left running
+        stop_process_group(proc)
 
 
 def main() -> int:

@@ -25,12 +25,18 @@ build, so this test always needs it.
 from __future__ import annotations
 
 import os
-import select
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+
+try:
+    from tests.unit.qemu_output import (
+        POPEN_GROUP_KWARGS, QemuOutputReader, stop_process_group)
+except ImportError:  # run as a script: python3 tests/unit/test_mipi_tx.py
+    from qemu_output import (
+        POPEN_GROUP_KWARGS, QemuOutputReader, stop_process_group)
 
 # Includes the bootloader auto-boot countdown (8-10 s, CLINT in SYSINFO).
 OVERALL_TIMEOUT_SEC = 180.0
@@ -193,43 +199,31 @@ def run_demo(qemu_bin: Path, bootloader: Path, flash: Path, dumpfile: Path) -> l
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        **POPEN_GROUP_KWARGS,
     )
+    reader = QemuOutputReader(proc)
 
     collected: list[str] = []
     deadline = time.time() + OVERALL_TIMEOUT_SEC
 
     try:
-        while time.time() < deadline:
-            if proc.stdout is None:
-                break
+        while time.time() < deadline and not reader.eof:
+            for line in reader.read_lines(0.4):
+                collected.append(line)
+                sys.stdout.write(line)
+                sys.stdout.flush()
 
-            ready, _, _ = select.select([proc.stdout], [], [], 0.4)
-            if not ready:
-                if proc.poll() is not None:
-                    break
-                continue
+                if "Done." in line or "ERROR!" in line:
+                    return collected
 
-            line = proc.stdout.readline()
-            if line == "":
-                break
-            collected.append(line)
-            sys.stdout.write(line)
-            sys.stdout.flush()
-
-            if "Done." in line or "ERROR!" in line:
-                return collected
-
+        reason = "QEMU exited" if reader.eof else "Timeout"
         raise RuntimeError(
-            "Timeout waiting for demo_mipi_tx to finish.\nOutput so far:\n"
+            f"{reason} before demo_mipi_tx finished.\nOutput so far:\n"
             + "".join(collected[-120:])
+            + reader.partial_line()
         )
     finally:
-        if proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                proc.kill()
+        stop_process_group(proc, grace_sec=10)
 
 
 def check_uart_output(lines: list[str]) -> None:

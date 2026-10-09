@@ -18,6 +18,13 @@ import time
 import subprocess
 from pathlib import Path
 
+try:
+    from tests.unit.qemu_output import (
+        POPEN_GROUP_KWARGS, QemuOutputReader, stop_process_group)
+except ImportError:  # run as a script: python3 tests/unit/<test>.py
+    from qemu_output import (
+        POPEN_GROUP_KWARGS, QemuOutputReader, stop_process_group)
+
 # How long we allow QEMU to run before forcing termination
 OVERALL_TIMEOUT_SEC = 60.0
 
@@ -75,7 +82,9 @@ def run_bootloader_test() -> None:
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        **POPEN_GROUP_KWARGS,
     )
+    reader = QemuOutputReader(proc)
 
     bootloader_seen = False
 
@@ -88,23 +97,23 @@ def run_bootloader_test() -> None:
                     f"[ERROR] Timeout: QEMU did not complete within "
                     f"{OVERALL_TIMEOUT_SEC} seconds"
                 )
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                raise RuntimeError("Timeout waiting for QEMU / bootloader output")
+                stop_process_group(proc)
+                raise RuntimeError(
+                    "Timeout waiting for QEMU / bootloader output; last partial "
+                    f"line: {reader.partial_line()!r}"
+                )
 
-            line = proc.stdout.readline()
-            if line == "":
-                # EOF
-                break
-
-            # Echo QEMU output to our stdout (useful for CI logs)
-            sys.stdout.write(line)
+            lines = reader.read_lines(0.5)
+            if not lines:
+                if reader.eof:
+                    break
+                continue
+            for line in lines:
+                # Echo QEMU output to our stdout (useful for CI logs)
+                sys.stdout.write(line)
             sys.stdout.flush()
 
-            if "NEORV32 Bootloader" in line:
+            if any("NEORV32 Bootloader" in line for line in lines) and not bootloader_seen:
                 bootloader_seen = True
                 print("[INFO] Detected NEORV32 Bootloader banner, sending Ctrl-a x...")
                 sys.stdout.flush()
@@ -122,8 +131,8 @@ def run_bootloader_test() -> None:
             rc = proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             print("[ERROR] QEMU did not exit after Ctrl-a x; killing it.")
-            proc.kill()
-            rc = proc.wait(timeout=5)
+            stop_process_group(proc)
+            rc = proc.returncode
 
         if not bootloader_seen:
             raise RuntimeError(
@@ -136,16 +145,8 @@ def run_bootloader_test() -> None:
         print("[INFO] run_bootloader.sh test PASSED.")
 
     finally:
-        # Safety: ensure process is not left running
-        if proc.poll() is None:
-            try:
-                proc.terminate()
-                proc.wait(timeout=5)
-            except Exception:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
+        # Safety: ensure neither the wrapper nor QEMU is left running
+        stop_process_group(proc)
 
 
 def main() -> int:

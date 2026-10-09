@@ -21,6 +21,13 @@ import sys
 import time
 from pathlib import Path
 
+try:
+    from tests.unit.qemu_output import (
+        POPEN_GROUP_KWARGS, QemuOutputReader, stop_process_group)
+except ImportError:  # run as a script: python3 tests/unit/test_clint_timer.py
+    from qemu_output import (
+        POPEN_GROUP_KWARGS, QemuOutputReader, stop_process_group)
+
 OVERALL_TIMEOUT_SEC = 20.0
 
 PASS_MARKER = "PROBE: PASS"
@@ -71,25 +78,19 @@ def run_clint_timer_test() -> None:
 
     proc = subprocess.Popen(
         cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT, text=True, bufsize=1,
+        stderr=subprocess.STDOUT, text=True, bufsize=1, **POPEN_GROUP_KWARGS,
     )
+    reader = QemuOutputReader(proc)
     lines = []
     deadline = time.time() + OVERALL_TIMEOUT_SEC
     try:
-        while time.time() < deadline:
-            line = proc.stdout.readline()
-            if not line:
-                if proc.poll() is not None:
-                    break
-                continue
-            line = line.rstrip("\r\n")
-            print(f"[QEMU] {line}")
-            lines.append(line)
-            if line == END_MARKER:
-                break
+        while time.time() < deadline and not reader.eof and END_MARKER not in lines:
+            for raw in reader.read_lines(0.5):
+                line = raw.rstrip("\r\n")
+                print(f"[QEMU] {line}")
+                lines.append(line)
     finally:
-        proc.kill()
-        proc.wait()
+        stop_process_group(proc)
 
     if END_MARKER not in lines:
         raise AssertionError(

@@ -25,13 +25,19 @@ NEORV32 tree, so in practice this test always needs it.
 from __future__ import annotations
 
 import os
-import select
 import socket
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+
+try:
+	from tests.unit.qemu_output import (
+		POPEN_GROUP_KWARGS, QemuOutputReader, stop_process_group)
+except ImportError:  # run as a script: python3 tests/unit/test_twi_i2c_slave.py
+	from qemu_output import (
+		POPEN_GROUP_KWARGS, QemuOutputReader, stop_process_group)
 
 # Includes the bootloader auto-boot countdown (8-10 s, CLINT in SYSINFO).
 OVERALL_TIMEOUT_SEC = 120.0
@@ -154,37 +160,23 @@ def generate_flash_image(repo_root: Path, payload: Path) -> Path:
 	return output
 
 
-def read_qemu_lines_nonblocking(proc: subprocess.Popen, timeout_sec: float) -> list[str]:
-	"""Read available QEMU stdout lines for up to timeout_sec."""
+def read_qemu_lines_nonblocking(reader: QemuOutputReader, timeout_sec: float) -> list[str]:
+	"""Read the complete QEMU stdout lines that arrive within timeout_sec."""
 	end = time.time() + timeout_sec
-	lines = []
+	lines: list[str] = []
 
-	while time.time() < end:
-		if proc.stdout is None:
-			return lines
-
-		# readline() blocks; gate it with select on POSIX.
-		ready, _, _ = select.select([proc.stdout], [], [], 0.1)
-		if not ready:
-			if proc.poll() is not None:
-				# Process exited; try one final read.
-				tail = proc.stdout.read()
-				if tail:
-					for chunk_line in tail.splitlines(True):
-						lines.append(chunk_line)
-				return lines
-			continue
-
-		line = proc.stdout.readline()
-		if line == "":
-			return lines
-		lines.append(line)
+	while not reader.eof:
+		remaining = end - time.time()
+		if remaining <= 0:
+			break
+		lines.extend(reader.read_lines(remaining))
 
 	return lines
 
 
 def wait_for_uart_markers(
 	proc: subprocess.Popen,
+	reader: QemuOutputReader,
 	overall_start: float,
 	collected: list[str],
 ) -> None:
@@ -200,7 +192,8 @@ def wait_for_uart_markers(
 			missing = [" or ".join(markers) for markers, ok in zip(marker_groups, seen) if not ok]
 			raise RuntimeError(
 				"Timeout waiting for UART markers. Missing: "
-				f"{', '.join(missing)}"
+				f"{', '.join(missing)}; last partial line: "
+				f"{reader.partial_line()!r}"
 			)
 
 		if proc.poll() is not None:
@@ -210,7 +203,7 @@ def wait_for_uart_markers(
 				+ "".join(collected[-120:])
 			)
 
-		new_lines = read_qemu_lines_nonblocking(proc, 0.4)
+		new_lines = read_qemu_lines_nonblocking(reader, 0.4)
 		for line in new_lines:
 			collected.append(line)
 			sys.stdout.write(line)
@@ -392,13 +385,15 @@ def run_twi_i2c_slave_test() -> None:
 			stderr=subprocess.STDOUT,
 			text=True,
 			bufsize=1,
+			**POPEN_GROUP_KWARGS,
 		)
+		reader = QemuOutputReader(proc)
 
 		collected_output: list[str] = []
 		overall_start = time.time()
 
 		try:
-			wait_for_uart_markers(proc, overall_start, collected_output)
+			wait_for_uart_markers(proc, reader, overall_start, collected_output)
 
 			# Give firmware a brief moment after boot handoff before host I2C traffic.
 			time.sleep(0.3)
@@ -439,7 +434,7 @@ def run_twi_i2c_slave_test() -> None:
 					)
 
 			# Let UART flush the per-byte demo messages for better debug logs.
-			for line in read_qemu_lines_nonblocking(proc, 1.0):
+			for line in read_qemu_lines_nonblocking(reader, 1.0):
 				collected_output.append(line)
 				sys.stdout.write(line)
 			sys.stdout.flush()
@@ -449,8 +444,8 @@ def run_twi_i2c_slave_test() -> None:
 			try:
 				rc = proc.wait(timeout=12)
 			except subprocess.TimeoutExpired:
-				proc.kill()
-				rc = proc.wait(timeout=5)
+				stop_process_group(proc)
+				rc = proc.returncode
 
 			if rc != 0:
 				raise RuntimeError(f"QEMU exited with non-zero status: {rc}")
@@ -463,14 +458,9 @@ def run_twi_i2c_slave_test() -> None:
 					request_qemu_exit(proc)
 					proc.wait(timeout=4)
 				except Exception:
-					try:
-						proc.terminate()
-						proc.wait(timeout=4)
-					except Exception:
-						try:
-							proc.kill()
-						except Exception:
-							pass
+					pass
+			# Also reaps QEMU if only the run_with_flash.sh wrapper exited.
+			stop_process_group(proc, grace_sec=4)
 
 
 def main() -> int:

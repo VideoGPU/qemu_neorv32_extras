@@ -97,6 +97,11 @@ python3 tests/unit/test_twi_i2c_slave.py
 python3 tests/unit/test_mipi_tx.py
 ```
 
+All tests read QEMU output through `tests/unit/qemu_output.py`, which never
+blocks on a partial line (such as the bootloader prompt `CMD:> `), so every
+test fails at its own timeout instead of hanging, and stops QEMU together with
+any `scripts/bash/*.sh` wrapper (U-Boot test excepted).
+
 Flash-boot tests take 8-10 s longer than the payload itself: the machine
 reports a CLINT in SYSINFO, so the stock bootloader runs its auto-boot
 countdown before loading from flash. All timeouts include that margin.
