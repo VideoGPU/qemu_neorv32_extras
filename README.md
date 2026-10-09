@@ -101,6 +101,7 @@ Run unit tests
 cd $HOME/qemu_neorv32_extras
 python3 tests/unit/test_clint_timer.py
 python3 tests/unit/test_run_bootloader.py
+python3 tests/unit/test_bootloader_sysinfo.py
 python3 tests/unit/test_run_with_flash.py
 python3 tests/unit/test_run_uboot.py
 python3 tests/unit/test_twi_i2c_slave.py
@@ -130,6 +131,13 @@ source is in `tests/unit/src/clint_probe/`; rebuild the binary with:
 ```bash
 tests/unit/src/clint_probe/build.sh   # CROSS=<prefix> to override the toolchain
 ```
+
+`test_bootloader_sysinfo.py` aborts the bootloader countdown and sends `i`
+(system info). It requires every line (HWV, CLK, MISA, XISA, SOC, MISC) and
+no trap: printing XISA reads the NEORV32 `mxisah` (`0xFC1`) and `mxisa`
+(`0xFC0`) CSRs, and a CPU model without `mxisah` stops there with
+`ERROR_EXCEPTION 0x00000002`. It also checks that MISC reports the modelled
+32 KiB IMEM and DMEM.
 
 `test_twi_i2c_slave.py` uses:
 
