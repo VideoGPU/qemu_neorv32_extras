@@ -19,7 +19,9 @@ import time
 import subprocess
 from pathlib import Path
 
-OVERALL_TIMEOUT_SEC = 90.0  # a bit more time, since we also boot Hello World
+# Boots Hello World too; includes the bootloader auto-boot countdown
+# (8-10 s, runs because the machine reports a CLINT in SYSINFO).
+OVERALL_TIMEOUT_SEC = 90.0
 
 
 def find_repo_root() -> Path:

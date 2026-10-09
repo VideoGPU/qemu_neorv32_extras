@@ -14,8 +14,12 @@ This test is intended to be runnable in CI, e.g.:
     NEORV32_BOOTLOADER_BIN=/path/to/neorv32_raw_exe.bin \
     python3 tests/unit/test_mipi_tx.py
 
-NEORV32_BOOTLOADER_BIN is optional. Use it when validating against a rebased
-or locally rebuilt NEORV32 tree instead of this repository's bundled bootloader.
+NEORV32_BOOTLOADER_BIN is required whenever the payload was built from a
+NEORV32 tree newer than the bundled bootloader (binaries/neorv32_commit_id.txt):
+such payloads carry the "NEO!" executable header, which the bundled bootloader
+rejects with ERROR_SIGNATURE. Point it at the bootloader built from the same
+tree as the payload. The bundled demo_mipi_tx payload is such a
+build, so this test always needs it.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ import tempfile
 import time
 from pathlib import Path
 
+# Includes the bootloader auto-boot countdown (8-10 s, CLINT in SYSINFO).
 OVERALL_TIMEOUT_SEC = 180.0
 
 FLASH_SIZE_HEX = "0x04000000"

@@ -40,8 +40,10 @@ Configure and build the QEMU, python option may vary, or not needed at all
   --disable-gtk
 
 make -j
-ls -l buld/qemu-system-riscv32
+ls -l build/qemu-system-riscv32
 ```
+
+`--enable-debug` is optional; release (optimised) builds work as well.
 
 ### Running unit tests
 Set the path to qemu-system-riscv32
@@ -78,13 +80,40 @@ PATH=/opt/riscv32-unknown-elf.gcc-12.1.0/bin:$PATH \
 export NEORV32_BOOTLOADER_BIN=$HOME/neorv32/sw/bootloader/neorv32_raw_exe.bin
 ```
 
+`NEORV32_BOOTLOADER_BIN` is effectively required for `test_twi_i2c_slave.py`
+and `test_mipi_tx.py`: their payloads are built with a current NEORV32 tree
+and carry the `NEO!` executable header, which the bundled bootloader
+(`binaries/neorv32_commit_id.txt`) rejects with `ERROR_SIGNATURE`. Always pair
+the payload with the bootloader from the same NEORV32 revision.
+
 Run unit tests
 ```bash
 cd $HOME/qemu_neorv32_extras
+python3 tests/unit/test_clint_timer.py
 python3 tests/unit/test_run_bootloader.py
 python3 tests/unit/test_run_with_flash.py
+python3 tests/unit/test_run_uboot.py
 python3 tests/unit/test_twi_i2c_slave.py
 python3 tests/unit/test_mipi_tx.py
+```
+
+Flash-boot tests take 8-10 s longer than the payload itself: the machine
+reports a CLINT in SYSINFO, so the stock bootloader runs its auto-boot
+countdown before loading from flash. All timeouts include that margin.
+
+`test_clint_timer.py` boots `binaries/tests/clint_probe.bin` directly as
+`-bios` (no bootloader, no flash) and checks, on UART0, that:
+
+* `csrw mcountinhibit` does not trap (CPU implements privileged spec 1.12),
+* the CLINT MTIME at `0xFFF4BFF8` is mapped and advancing,
+* MTIMECMP at `0xFFF44000` raises the machine timer interrupt
+  (`mcause 0x80000007`).
+
+On failure it prints the trap `mcause` of each failing check. The probe
+source is in `tests/unit/src/clint_probe/`; rebuild the binary with:
+
+```bash
+tests/unit/src/clint_probe/build.sh   # CROSS=<prefix> to override the toolchain
 ```
 
 `test_twi_i2c_slave.py` uses:
@@ -133,7 +162,12 @@ bootloader and examples:
   guest via QEMU's ``if=mtd`` backend).  
 * TWD (two-wire device) I2C slave on an internal I2C bus.  
 * MIPI CSI-2 TX AXI4-Lite IP on the external bus (XBUS), at ``0x44A00000``.  
-* Basic timer/CLINT-like facilities required by the example software.  
+* CLINT at ``0xFFF40000`` (SiFive-compatible layout: MSWI ``+0x0000``,  
+  MTIMECMP ``+0x4000``, MTIME ``+0xBFF8``). MTIME counts at the SYSINFO core  
+  clock (100 MHz), drives the ``time``/``timeh`` CSRs and raises the machine  
+  timer interrupt (``mip.MTIP``). SYSINFO reports it as ``IO_CLINT``.  
+* CPU implementing the RISC-V privileged specification 1.12  
+  (``mcountinhibit``, ``menvcfg``, Zicntr), matching the RTL.  
   
 (Exact register maps and optional peripherals depend on the QEMU version and  
 the specific patch series you are using.)  
@@ -156,6 +190,11 @@ From the command line::
 Typical usage is to boot the NEORV32 bootloader as the QEMU ``-bios`` image,  
 and to provide a raw SPI flash image via an MTD drive. The bootloader will  
 then jump to the application image placed at the configured flash offset.  
+
+Because SYSINFO reports the CLINT, the bootloader first prints  
+``Auto-boot in Ns. Press any key to abort.`` and waits (8 s for current  
+NEORV32 builds, 10 s for the bundled bootloader). Any key drops to the  
+bootloader prompt; otherwise it loads from SPI flash when the countdown ends.  
 
 #### Preparing the SPI flash with a “Hello World” example
 

@@ -14,8 +14,12 @@ This test is intended to be runnable in CI, e.g.:
 	NEORV32_BOOTLOADER_BIN=/path/to/neorv32_raw_exe.bin \
 	python3 -m tests.unit.test_twi_i2c_slave
 
-NEORV32_BOOTLOADER_BIN is optional. Use it when validating against a rebased
-or locally rebuilt NEORV32 tree instead of this repository's bundled bootloader.
+NEORV32_BOOTLOADER_BIN is required whenever the payload was built from a
+NEORV32 tree newer than the bundled bootloader (binaries/neorv32_commit_id.txt):
+such payloads carry the "NEO!" executable header, which the bundled bootloader
+rejects with ERROR_SIGNATURE. Point it at the bootloader built from the same
+tree as the payload. The demo_twd payload is built from the local
+NEORV32 tree, so in practice this test always needs it.
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ import tempfile
 import time
 from pathlib import Path
 
+# Includes the bootloader auto-boot countdown (8-10 s, CLINT in SYSINFO).
 OVERALL_TIMEOUT_SEC = 120.0
 SOCKET_CONNECT_TIMEOUT_SEC = 25.0
 
