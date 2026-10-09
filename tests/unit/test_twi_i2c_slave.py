@@ -14,12 +14,11 @@ This test is intended to be runnable in CI, e.g.:
 	NEORV32_BOOTLOADER_BIN=/path/to/neorv32_raw_exe.bin \
 	python3 -m tests.unit.test_twi_i2c_slave
 
-NEORV32_BOOTLOADER_BIN is required whenever the payload was built from a
-NEORV32 tree newer than the bundled bootloader (binaries/neorv32_commit_id.txt):
-such payloads carry the "NEO!" executable header, which the bundled bootloader
-rejects with ERROR_SIGNATURE. Point it at the bootloader built from the same
-tree as the payload. The demo_twd payload is built from the local
-NEORV32 tree, so in practice this test always needs it.
+NEORV32_BOOTLOADER_BIN is optional. The bundled bootloader is built from the
+NEORV32 revision in binaries/neorv32_commit_id.txt; override it when the
+payload comes from a different NEORV32 revision, because the bootloader and
+image_gen executable headers must match (a mismatch fails with
+ERROR_SIGNATURE).
 """
 
 from __future__ import annotations
@@ -39,7 +38,7 @@ except ImportError:  # run as a script: python3 tests/unit/test_twi_i2c_slave.py
 	from qemu_output import (
 		POPEN_GROUP_KWARGS, QemuOutputReader, stop_process_group)
 
-# Includes the bootloader auto-boot countdown (8-10 s, CLINT in SYSINFO).
+# Includes the bootloader auto-boot countdown (8 s, CLINT in SYSINFO).
 OVERALL_TIMEOUT_SEC = 120.0
 SOCKET_CONNECT_TIMEOUT_SEC = 25.0
 

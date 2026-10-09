@@ -1,6 +1,7 @@
 # qemu_neorv32_extras
 Companion resources for the QEMU NEORV32 machine: prebuilt images, scripts, and tests.  
-Binaries are based on commit 7d0ef6b2 , Oct 14, 2025. Before release v1.12.3 on neorv32 repo.
+Binaries are based on NEORV32 commit 994701a0 (Sep 10, 2026, `v1.13.5-75-g994701a04`), recorded in  
+`binaries/neorv32_commit_id.txt`. The bundled bootloader and payloads use the `NEO!` executable header.
 
 ## Basic setup
 
@@ -80,11 +81,20 @@ PATH=/opt/riscv32-unknown-elf.gcc-12.1.0/bin:$PATH \
 export NEORV32_BOOTLOADER_BIN=$HOME/neorv32/sw/bootloader/neorv32_raw_exe.bin
 ```
 
-`NEORV32_BOOTLOADER_BIN` is effectively required for `test_twi_i2c_slave.py`
-and `test_mipi_tx.py`: their payloads are built with a current NEORV32 tree
-and carry the `NEO!` executable header, which the bundled bootloader
-(`binaries/neorv32_commit_id.txt`) rejects with `ERROR_SIGNATURE`. Always pair
-the payload with the bootloader from the same NEORV32 revision.
+The bootloader and the payload must come from the same NEORV32 revision: the
+executable header written by `image_gen` changed over time (legacy
+`0xB007C0DE` vs. `NEO!`), and a mismatch fails with `ERROR_SIGNATURE`. The
+bundled bootloader matches the bundled payloads and a `demo_twd` built from
+the NEORV32 revision in `binaries/neorv32_commit_id.txt`, so
+`NEORV32_BOOTLOADER_BIN` is only needed for payloads from another revision.
+
+Refreshing the bundled binaries for a new NEORV32 revision: build the
+bootloader with the command above, build `hello_world` with
+`make clean_all exe RISCV_PREFIX=riscv32-unknown-elf- MARCH=rv32imc_zicsr_zifencei MABI=ilp32`
+in `sw/example/hello_world`, copy `sw/bootloader/neorv32_raw_exe.bin` to
+`binaries/bootloader/` and `sw/example/hello_world/neorv32_exe.bin` to
+`binaries/examples/hello_world/`, and update `binaries/neorv32_commit_id.txt`.
+The bootloader binary is reproducible except for its embedded build date.
 
 Run unit tests
 ```bash
@@ -102,7 +112,7 @@ blocks on a partial line (such as the bootloader prompt `CMD:> `), so every
 test fails at its own timeout instead of hanging, and stops QEMU together with
 any `scripts/bash/*.sh` wrapper (U-Boot test excepted).
 
-Flash-boot tests take 8-10 s longer than the payload itself: the machine
+Flash-boot tests take 8 s longer than the payload itself: the machine
 reports a CLINT in SYSINFO, so the stock bootloader runs its auto-boot
 countdown before loading from flash. All timeouts include that margin.
 
@@ -197,8 +207,8 @@ and to provide a raw SPI flash image via an MTD drive. The bootloader will
 then jump to the application image placed at the configured flash offset.  
 
 Because SYSINFO reports the CLINT, the bootloader first prints  
-``Auto-boot in Ns. Press any key to abort.`` and waits (8 s for current  
-NEORV32 builds, 10 s for the bundled bootloader). Any key drops to the  
+``Auto-boot in 8s. Press any key to abort.`` and waits (``AUTO_BOOT_TIMEOUT``,  
+8 s by default). Any key drops to the  
 bootloader prompt; otherwise it loads from SPI flash when the countdown ends.  
 
 #### Preparing the SPI flash with a “Hello World” example
