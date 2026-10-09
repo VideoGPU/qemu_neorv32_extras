@@ -100,6 +100,7 @@ Run unit tests
 ```bash
 cd $HOME/qemu_neorv32_extras
 python3 tests/unit/test_clint_timer.py
+python3 tests/unit/test_twd_model.py
 python3 tests/unit/test_run_bootloader.py
 python3 tests/unit/test_bootloader_sysinfo.py
 python3 tests/unit/test_run_with_flash.py
@@ -138,6 +139,15 @@ no trap: printing XISA reads the NEORV32 `mxisah` (`0xFC1`) and `mxisa`
 (`0xFC0`) CSRs, and a CPU model without `mxisah` stops there with
 `ERROR_EXCEPTION 0x00000002`. It also checks that MISC reports the modelled
 32 KiB IMEM and DMEM.
+
+`test_twd_model.py` boots `binaries/tests/twd_probe.bin` directly as `-bios`
+with `i2c-master-chardev` on the TWD bus and drives it step by step. The
+probe checks the TWD against `rtl/core/neorv32_twd.vhd`: the `CTRL` layout
+(FIFO size fields at bits 17 / 21), the interrupt sources, `COM_BEG` /
+`COM_END` (set by an addressed transfer, write-1-to-clear), reads that pop
+the TX FIFO head only on the master's ACK (the NACKed byte is read again,
+an empty FIFO sends `0xFF`), NACK of a foreign address, and flags cleared
+on disable. Rebuild the probe with `tests/unit/src/twd_probe/build.sh`.
 
 `test_twi_i2c_slave.py` uses:
 
