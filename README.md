@@ -107,6 +107,7 @@ python3 tests/unit/test_run_with_flash.py
 python3 tests/unit/test_run_uboot.py
 python3 tests/unit/test_twi_i2c_slave.py
 python3 tests/unit/test_mipi_tx.py
+python3 tests/unit/test_i2c_target_model.py
 ```
 
 All tests read QEMU output through `tests/unit/qemu_output.py`, which never
@@ -168,6 +169,20 @@ on disable. Rebuild the probe with `tests/unit/src/twd_probe/build.sh`.
 It boots `demo_mipi_tx`, checks that the IP is detected and that all four
 frames complete, and then validates the captured CSI-2 stream (framing,
 header ECC and payload CRC).
+
+`test_i2c_target_model.py` boots `binaries/tests/i2c_target_probe.bin`
+directly as `-bios` (with `-icount`) and attaches `i2c-master-chardev` to
+the TWD bus. The probe drives the `neorv32.i2c-target` XBUS device
+(`0x44A10000`) from its interrupt and serves four EEPROMs at `0x54..0x57`,
+an OV5693-like 16-bit register space at `0x36` and a statistics / control
+device at `0x5F`. The test checks reads and writes through clock stretching
+(`R`, `W` and the `WR` repeated-START command, 256-byte reads), NACK of
+unconfigured addresses, the interrupt path, and the stretch watchdog: after
+`W 0x5f 1 0xdd` the probe stops serving for 200 ms, reads return `0xFF`,
+the probe sees the `WDOG` events, and its late answers do not leak into the
+next transfer. Everything runs once with `bus-hz=0` and once with
+`bus-hz=400000`. Rebuild the probe with
+`tests/unit/src/i2c_target_probe/build.sh`.
 
 Validated on 2026-09-10 against QEMU `6c5974a5db` and NEORV32
 `ae4dc23de`: the test found I2C address `0x32`, wrote `11 22 33`, read the

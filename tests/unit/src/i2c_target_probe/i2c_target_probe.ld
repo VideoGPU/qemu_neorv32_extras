@@ -1,0 +1,18 @@
+OUTPUT_ARCH(riscv)
+ENTRY(_start)
+MEMORY {
+  rom (rx)  : ORIGIN = 0xFFE00000, LENGTH = 8K
+  ram (rw)  : ORIGIN = 0x80000000, LENGTH = 32K
+}
+SECTIONS {
+  .text   : { *(.text.start) *(.text*) } > rom
+  .rodata : { *(.rodata*) *(.srodata*) } > rom
+  .bss (NOLOAD) : {
+    . = ALIGN(4);
+    __bss_start = .;
+    *(.sbss*) *(.bss*) *(COMMON)
+    . = ALIGN(4);
+    __bss_end = .;
+  } > ram
+  /DISCARD/ : { *(.data*) *(.sdata*) *(.comment) }
+}
