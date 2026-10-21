@@ -258,14 +258,22 @@ def compute_header_ecc(data_id: int, byte1: int, byte2: int) -> int:
     return ecc
 
 
-def crc16_ccitt_false(payload: bytes) -> int:
-    """CRC16-CCITT-FALSE (poly 0x1021, init 0xFFFF, no reflection)."""
+def crc16_csi2(payload: bytes) -> int:
+    """CSI-2 payload CRC-16: poly 0x1021 LSB first (0x8408), init 0xFFFF.
+
+    The CSI-2 specification example payload
+    FF 00 00 02 B9 DC F3 72 BB D4 B8 5A C8 75 C2 7C 81 F8 05 DF FF 00 00 01
+    gives 0x00F0.
+    """
     crc = 0xFFFF
     for value in payload:
-        crc ^= value << 8
+        crc ^= value
         for _ in range(8):
-            crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
+            crc = (crc >> 1) ^ 0x8408 if crc & 1 else crc >> 1
     return crc
+
+
+assert crc16_csi2(bytes.fromhex("FF000002B9DCF372BBD4B85AC875C27C81F805DFFF000001")) == 0x00F0
 
 
 def check_dumpfile(dumpfile: Path) -> None:
@@ -318,7 +326,7 @@ def check_dumpfile(dumpfile: Path) -> None:
                 raise AssertionError(f"Truncated long packet at offset {offset}")
             payload = data[offset + 4:payload_end]
             crc = data[payload_end] | (data[payload_end + 1] << 8)
-            if crc != crc16_ccitt_false(payload):
+            if crc != crc16_csi2(payload):
                 raise AssertionError(f"Bad payload CRC at offset {offset}")
             lines_in_frame += 1
             offset = payload_end + 2
